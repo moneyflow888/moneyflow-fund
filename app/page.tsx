@@ -1,65 +1,104 @@
-import Image from "next/image";
-
-export default function Home() {
+export default function Page() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(1200px 600px at 20% 0%, rgba(214,178,94,0.25), transparent 60%)," +
+          "radial-gradient(900px 500px at 90% 10%, rgba(46,91,255,0.25), transparent 55%)," +
+          "#0B0B0C",
+        color: "white",
+        padding: 40,
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont",
+      }}
+    >
+      {/* Header */}
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 32,
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0 }}>
+            💰 MoneyFlow
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p style={{ opacity: 0.7, marginTop: 6 }}>
+            Fund Core Dashboard
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div style={{ opacity: 0.5, fontSize: 14 }}>
+          v0 · local dev
         </div>
-      </main>
+      </header>
+
+      {/* KPI Grid */}
+      <section>
+        <p style={{ opacity: 0.6, marginBottom: 16 }}>
+          Fund NAV · PnL · Principal · Investor Ledger
+        </p>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gap: 20,
+          }}
+        >
+          <Kpi title="Total NAV" value="$0.00" />
+          <Kpi title="This Week PnL" value="+$0.00" />
+          <Kpi title="Net Principal" value="$0.00" />
+        </div>
+      </section>
+
+      {/* Placeholder / Next */}
+      <section
+        style={{
+          marginTop: 48,
+          padding: 24,
+          borderRadius: 16,
+          border: "1px dashed rgba(255,255,255,0.15)",
+          opacity: 0.6,
+        }}
+      >
+        <div style={{ fontSize: 14, marginBottom: 8 }}>
+          Coming next
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <li>Supabase fund snapshot</li>
+          <li>Investor accounts</li>
+          <li>Admin settlement</li>
+        </ul>
+      </section>
+    </main>
+  );
+}
+
+function Kpi({ title, value }: { title: string; value: string }) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 16,
+        padding: 20,
+        boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+      }}
+    >
+      <div style={{ opacity: 0.7, fontSize: 14 }}>{title}</div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: 0.3,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }

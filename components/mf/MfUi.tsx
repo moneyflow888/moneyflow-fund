@@ -35,11 +35,15 @@ export const PIE_PALETTE = [
 
 export function Shell({
   children,
+  headerLeft,
   headerRight,
 }: {
   children: React.ReactNode;
+  headerLeft?: React.ReactNode;
   headerRight?: React.ReactNode;
 }) {
+  const hasHeader = Boolean(headerLeft || headerRight);
+
   return (
     <main
       style={{
@@ -49,30 +53,14 @@ export function Shell({
       }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 18px 60px" }}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-3">
-              <div style={{ fontSize: 34, lineHeight: 1 }}>💰</div>
-              <div>
-                <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-0.02em" }}>
-                  MoneyFlow
-                </div>
-                <div style={{ marginTop: 6, color: THEME.muted, fontSize: 13 }}>
-                  Fund Core Dashboard
-                </div>
-                <div style={{ marginTop: 10, color: THEME.faint, fontSize: 12 }}>
-                  Fund NAV · PnL · Principal · Investor Ledger
-                </div>
-              </div>
-            </div>
+        {hasHeader ? (
+          <div className="flex items-start justify-between gap-3">
+            <div>{headerLeft}</div>
+            {headerRight ? <div className="flex items-center gap-2">{headerRight}</div> : null}
           </div>
+        ) : null}
 
-          {headerRight ? (
-            <div className="flex items-center gap-2">{headerRight}</div>
-          ) : null}
-        </div>
-
-        <div style={{ marginTop: 18 }}>{children}</div>
+        <div style={{ marginTop: hasHeader ? 18 : 0 }}>{children}</div>
       </div>
     </main>
   );
@@ -123,14 +111,10 @@ export function Card({
         <div className="flex items-start justify-between gap-3">
           <div>
             {title ? (
-              <div style={{ fontSize: 14, fontWeight: 700, color: THEME.text }}>
-                {title}
-              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: THEME.text }}>{title}</div>
             ) : null}
             {subtitle ? (
-              <div style={{ marginTop: 4, fontSize: 12, color: THEME.muted }}>
-                {subtitle}
-              </div>
+              <div style={{ marginTop: 4, fontSize: 12, color: THEME.muted }}>{subtitle}</div>
             ) : null}
           </div>
           {right ? <div className="shrink-0">{right}</div> : null}
@@ -153,13 +137,20 @@ export function Metric({
   sub?: string;
   tone?: "good" | "bad" | "neutral";
 }) {
-  const vColor =
-    tone === "good" ? THEME.good : tone === "bad" ? THEME.bad : THEME.text;
+  const vColor = tone === "good" ? THEME.good : tone === "bad" ? THEME.bad : THEME.text;
 
   return (
     <div>
       <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 700 }}>{label}</div>
-      <div style={{ marginTop: 8, fontSize: 34, fontWeight: 800, color: vColor, letterSpacing: "-0.02em" }}>
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 34,
+          fontWeight: 800,
+          color: vColor,
+          letterSpacing: "-0.02em",
+        }}
+      >
         {value}
       </div>
       {sub ? (

@@ -6,12 +6,11 @@ import { Shell, Card, Button, THEME } from "@/components/mf/MfUi";
 
 async function safeReadJson(r: Response) {
   const text = await r.text();
-  if (!text) return { ok: r.ok, status: r.status, data: null as any, raw: "" };
+  if (!text) return { ok: r.ok, status: r.status, data: null as any };
   try {
-    const data = JSON.parse(text);
-    return { ok: r.ok, status: r.status, data, raw: text };
+    return { ok: r.ok, status: r.status, data: JSON.parse(text) };
   } catch {
-    return { ok: r.ok, status: r.status, data: null as any, raw: text };
+    return { ok: r.ok, status: r.status, data: null as any };
   }
 }
 
@@ -62,7 +61,6 @@ export default function AdminLoginPage() {
                   color: THEME.text,
                 }}
               />
-
               <Button onClick={onLogin} disabled={busy || !password}>
                 {busy ? "Logging in…" : "Login"}
               </Button>
@@ -73,7 +71,7 @@ export default function AdminLoginPage() {
                 </div>
               ) : (
                 <div className="text-xs" style={{ color: THEME.muted }}>
-                  登入成功後會寫入 cookie（mf_admin=1），才能使用 Freeze ON/OFF。
+                  登入成功會寫入 cookie（mf_admin=1），才能按 Freeze ON/OFF。
                 </div>
               )}
             </div>

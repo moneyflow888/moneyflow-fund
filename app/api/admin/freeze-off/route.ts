@@ -1,25 +1,25 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { requireAdmin } from "../_utils";
 import { createClient } from "@supabase/supabase-js";
-import { requireAdmin } from "../_auth";
 
-export const runtime = "nodejs";
+export async function POST() {
+  if (!requireAdmin()) {
+    return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+  }
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
-
-export async function POST(req: NextRequest) {
-  const auth = requireAdmin(req);
-  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
+  const supabase = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
 
   const { error } = await supabase
-    .from("system_state")
-    .update({ is_frozen: false, updated_at: new Date().toISOString() })
+    .from("pool_state")
+    .update({ freeze: false, updated_at: new Date().toISOString() })
     .eq("id", 1);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
-  return NextResponse.json({ ok: true, is_frozen: false });
+  return NextResponse.json({ ok: true });
 }

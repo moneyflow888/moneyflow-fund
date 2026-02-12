@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
@@ -54,6 +55,7 @@ async function safeReadJson(r: Response) {
 }
 
 export default function InvestorsPage() {
+  const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
@@ -151,7 +153,7 @@ export default function InvestorsPage() {
 
   async function logout() {
     await supabase.auth.signOut();
-    window.location.href = "/investors/login";
+    router.push("/investors/login");
   }
 
   if (loading) {
@@ -298,11 +300,7 @@ export default function InvestorsPage() {
           </Card>
 
           <Card accent="navy">
-            <Metric
-              label="全體淨入金（Principal）"
-              value={`${fmtUsd(principalUsd)} 美元`}
-              sub="入金累積 − 出金累積"
-            />
+            <Metric label="全體淨入金（Principal）" value={`${fmtUsd(principalUsd)} 美元`} sub="入金累積 − 出金累積" />
           </Card>
         </div>
 
@@ -342,7 +340,8 @@ export default function InvestorsPage() {
                     />
                   </Card>
 
-                  <Card accent="blue">
+                  {/* ✅ 修正：blue → navy */}
+                  <Card accent="navy">
                     <Metric
                       label="我的待提款"
                       value={`${fmtUsd(ledger?.pending_withdraw_usd ?? null)} 美元`}

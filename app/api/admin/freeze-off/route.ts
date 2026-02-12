@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "../_utils";
+import { isAdmin } from "../_utils";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST() {
-  if (!requireAdmin()) {
+  if (!isAdmin()) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
@@ -21,5 +21,5 @@ export async function POST() {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, freeze: false });
 }

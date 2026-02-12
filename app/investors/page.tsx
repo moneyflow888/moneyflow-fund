@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
+import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
 type PoolMetrics = {
   nav_usd: number | string;
@@ -39,9 +40,27 @@ async function safeReadJson(r: Response) {
 }
 
 export default function InvestorsPage() {
+  const supabase = supabaseBrowser();
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [pool, setPool] = useState<PoolMetrics | null>(null);
+
+  const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+
+  // auth state
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthedEmail(data.session?.user?.email ?? null);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthedEmail(session?.user?.email ?? null);
+    });
+
+    return () => sub.subscription.unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function reload() {
     try {
@@ -155,8 +174,29 @@ export default function InvestorsPage() {
             回公開首頁
           </Link>
 
-          {/* 先放佔位：之後接 Supabase Auth */}
-          <Button onClick={() => alert("下一步：接 Supabase Auth 登入")}>投資人登入</Button>
+          {authedEmail ? (
+            <>
+              <div
+                className="rounded-full border px-3 py-1 text-xs font-semibold"
+                style={{
+                  borderColor: "rgba(255,255,255,0.18)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "rgba(255,255,255,0.9)",
+                }}
+                title="已登入"
+              >
+                {authedEmail}
+              </div>
+
+              <Link href="/investors/logout">
+                <Button>登出</Button>
+              </Link>
+            </>
+          ) : (
+            <Link href="/investors/login">
+              <Button>投資人登入</Button>
+            </Link>
+          )}
 
           <button
             onClick={reload}
@@ -197,31 +237,40 @@ export default function InvestorsPage() {
         <Card
           accent="gold"
           title="我的帳本（即將上線）"
-          subtitle="下一步：接 investor_accounts + requests（只看自己）"
+          subtitle={authedEmail ? "已登入：下一步接我的帳本資料" : "請先登入以查看自己的帳本"}
         >
-          <div className="text-sm" style={{ color: THEME.muted }}>
-            這裡之後會顯示：
-            <ul className="list-disc pl-5 mt-2 space-y-1">
-              <li>我的淨入金（Principal）</li>
-              <li>我的待提款（Pending）</li>
-              <li>我的目前損益（Freeze=true 時 Frozen）</li>
-              <li>入金申請（提交 + 列表）</li>
-              <li>提款申請（提交 + 列表）</li>
-            </ul>
-          </div>
+          {authedEmail ? (
+            <div className="text-sm" style={{ color: THEME.muted }}>
+              下一步會顯示：
+              <ul className="list-disc pl-5 mt-2 space-y-1">
+                <li>我的淨入金（Principal）</li>
+                <li>我的待提款（Pending）</li>
+                <li>我的目前損益（Freeze=true 時 Frozen）</li>
+                <li>入金申請（提交 + 列表）</li>
+                <li>提款申請（提交 + 列表）</li>
+              </ul>
+
+              <div className="mt-4 text-xs" style={{ color: THEME.muted }}>
+                * 之後會用 RLS：只允許 auth.uid() = user_id 的資料讀寫
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm" style={{ color: THEME.muted }}>
+              你目前尚未登入。
+              <div className="mt-3">
+                <Link href="/investors/login">
+                  <Button>前往登入 / 註冊</Button>
+                </Link>
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card accent="navy" title="規則提示" subtitle="你確認的規則 7~10（核心）">
           <div className="text-sm leading-6" style={{ color: THEME.muted }}>
-            <div>
-              profit_pool = NAV − 全體 principal 加總
-            </div>
-            <div className="mt-2">
-              投資人損益 = profit_pool × (個人 principal / 全體 principal)
-            </div>
-            <div className="mt-2">
-              Freeze = true 時：損益不更新、可提款上限凍結
-            </div>
+            <div>profit_pool = NAV − 全體 principal 加總</div>
+            <div className="mt-2">投資人損益 = profit_pool × (個人 principal / 全體 principal)</div>
+            <div className="mt-2">Freeze = true 時：損益不更新、可提款上限凍結</div>
           </div>
         </Card>
       </div>

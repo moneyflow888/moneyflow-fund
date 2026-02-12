@@ -8,7 +8,7 @@ export async function GET() {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 1️⃣ 讀最新 NAV snapshot
+    // 1) 最新 NAV snapshot
     const { data: navRow, error: navErr } = await supabase
       .from("nav_snapshots")
       .select("*")
@@ -21,33 +21,34 @@ export async function GET() {
     }
 
     const nav_usd = Number(navRow?.total_nav ?? 0);
-    const nav_ts = navRow?.timestamp ?? null;
-    const snapshot_id = navRow?.snapshot_id ?? null;
+    const nav_ts = (navRow as any)?.timestamp ?? null;
+    const snapshot_id = (navRow as any)?.snapshot_id ?? null;
 
-    // 2️⃣ 讀 pool_state（freeze 狀態）
-    const { data: state } = await supabase
+    // 2) 讀 pool_state.freeze
+    const { data: state, error: stateErr } = await supabase
       .from("pool_state")
-      .select('"freeze"')
+      .select("freeze")
       .eq("id", 1)
       .single();
 
-    const freeze = state?.freeze ?? false;
+    // 讀不到就容錯為 false（避免 public api 爆掉）
+    const freeze = stateErr ? false : Boolean((state as any)?.freeze);
 
-    // 3️⃣ 計算全體 principal（如果還沒做 investor_accounts 就先給 0）
+    // 3) 全體 principal（如果 investor_accounts / 欄位還沒做，容錯為 0）
     let total_principal_usd = 0;
 
-    const { data: principals } = await supabase
+    const { data: principals, error: pErr } = await supabase
       .from("investor_accounts")
       .select("principal_remaining_usd");
 
-    if (principals) {
-      total_principal_usd = principals.reduce(
-        (sum, r) => sum + Number(r.principal_remaining_usd ?? 0),
+    if (!pErr && principals) {
+      total_principal_usd = (principals as any[]).reduce(
+        (sum, r) => sum + Number(r?.principal_remaining_usd ?? 0),
         0
       );
     }
 
-    // 4️⃣ 計算 WTD（你如果已有邏輯可替換）
+    // 4) WTD（你之後可換成真實算法）
     const wtd_usd = 0;
 
     return NextResponse.json({

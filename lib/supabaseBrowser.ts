@@ -1,3 +1,4 @@
+// lib/supabaseBrowser.ts
 import { createClient } from "@supabase/supabase-js";
 
 export const supabaseBrowser = () =>

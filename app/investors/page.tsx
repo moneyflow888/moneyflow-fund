@@ -19,11 +19,11 @@ type Ledger = {
   user_id: string;
   frozen: boolean;
   nav_usd: number | null;
-  principal_usd: number; // 我的淨入金（SETTLED 入 - SETTLED 出）
-  pending_withdraw_usd: number; // 我的待提款（PENDING 提款加總）
-  total_principal_usd: number | null; // 全體淨入金（可能因 RLS 為 null）
-  profit_pool_usd: number | null; // 可能因 RLS 為 null
-  investor_pnl_usd: number | null; // Frozen 或 RLS 時為 null
+  principal_usd: number;
+  pending_withdraw_usd: number;
+  total_principal_usd: number | null;
+  profit_pool_usd: number | null;
+  investor_pnl_usd: number | null;
 };
 
 function num(v: any): number {
@@ -41,7 +41,6 @@ function formatTime(ts: string | null) {
   if (Number.isNaN(d.getTime())) return ts;
   return d.toLocaleString();
 }
-
 async function safeReadJson(r: Response) {
   const text = await r.text();
   if (!text) return { ok: r.ok, status: r.status, data: null as any };
@@ -53,7 +52,6 @@ async function safeReadJson(r: Response) {
 }
 
 export default function InvestorsPage() {
-  // ✅ 建議用 useMemo：避免每次 render 都重新 createClient
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
@@ -62,7 +60,7 @@ export default function InvestorsPage() {
 
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
 
-  // investor ledger
+  // ledger
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerErr, setLedgerErr] = useState<string | null>(null);
   const [ledger, setLedger] = useState<Ledger | null>(null);
@@ -78,8 +76,7 @@ export default function InvestorsPage() {
     });
 
     return () => sub.subscription.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase]);
 
   async function reloadPool() {
     try {
@@ -129,16 +126,14 @@ export default function InvestorsPage() {
     }
   }
 
-  // 初次載入：基金資訊
   useEffect(() => {
     reloadPool();
   }, []);
 
-  // 登入後才載入 ledger
+  // 登入後才讀 ledger
   useEffect(() => {
-    if (authedEmail) {
-      reloadLedger();
-    } else {
+    if (authedEmail) reloadLedger();
+    else {
       setLedger(null);
       setLedgerErr(null);
     }
@@ -296,7 +291,11 @@ export default function InvestorsPage() {
         </Card>
 
         <Card accent="navy">
-          <Metric label="全體淨入金（Principal）" value={`${fmtUsd(principalUsd)} 美元`} sub="入金累積 − 出金累積" />
+          <Metric
+            label="全體淨入金（Principal）"
+            value={`${fmtUsd(principalUsd)} 美元`}
+            sub="入金累積 − 出金累積"
+          />
         </Card>
       </div>
 
@@ -332,7 +331,7 @@ export default function InvestorsPage() {
                   <Metric
                     label="我的淨入金"
                     value={`${fmtUsd(ledger?.principal_usd ?? null)} 美元`}
-                    sub="SETTLED 入 - SETTLED 出"
+                    sub="SETTLED 入 − SETTLED 出"
                   />
                 </Card>
 
@@ -347,19 +346,23 @@ export default function InvestorsPage() {
                 <Card accent="good">
                   <Metric
                     label="我的目前損益"
-                    value={
-                      ledger?.frozen
-                        ? "Frozen"
-                        : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`
-                    }
+                    value={ledger?.frozen ? "Frozen" : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`}
                     sub={ledger?.frozen ? "Freeze=true 不更新" : "比例分配損益"}
-                    tone={ledger?.frozen ? "muted" : (ledger?.investor_pnl_usd ?? 0) >= 0 ? "good" : "bad"}
+                    tone={
+                      ledger?.frozen
+                        ? "muted"
+                        : (ledger?.investor_pnl_usd ?? 0) >= 0
+                        ? "good"
+                        : "bad"
+                    }
                   />
                 </Card>
               </div>
 
               <div className="mt-3 text-xs" style={{ color: THEME.muted }}>
-                {ledgerLoading ? "載入中…" : "＊提示：若 profit_pool / 全體 principal 顯示為空值（—），是因為 RLS 不允許投資人讀全體資料。下一步我會改成由 server 用 service role 計算後回傳。"}
+                {ledgerLoading
+                  ? "載入中…"
+                  : "＊提示：若 profit_pool / 全體 principal 顯示為 —，代表 RLS 不允許投資人讀全體資料。下一步我會改成由 server 用 service role 計算後回傳。"}
               </div>
             </>
           )}
@@ -372,7 +375,7 @@ export default function InvestorsPage() {
             <div className="mt-2">Freeze = true 時：損益不更新、可提款上限凍結</div>
 
             <div className="mt-4 text-xs" style={{ color: THEME.muted }}>
-              <div>NAV（from public）: {fmtUsd(ledger?.nav_usd ?? null)}</div>
+              <div>NAV（from ledger/public）: {fmtUsd(ledger?.nav_usd ?? null)}</div>
               <div>全體淨入金: {fmtUsd(ledger?.total_principal_usd ?? null)}</div>
               <div>profit_pool: {fmtUsd(ledger?.profit_pool_usd ?? null)}</div>
             </div>

@@ -1,54 +1,85 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Shell, Card, Button, THEME } from "@/components/mf/MfUi";
 
-export default function AdminLogin() {
-  const [password, setPassword] = useState("");
-  const [err, setErr] = useState<string | null>(null);
+async function safeReadJson(r: Response) {
+  const text = await r.text();
+  if (!text) return { ok: r.ok, status: r.status, data: null as any, raw: "" };
+  try {
+    const data = JSON.parse(text);
+    return { ok: r.ok, status: r.status, data, raw: text };
+  } catch {
+    return { ok: r.ok, status: r.status, data: null as any, raw: text };
+  }
+}
+
+export default function AdminLoginPage() {
   const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  async function login() {
-    setErr(null);
+  async function onLogin() {
+    try {
+      setErr(null);
+      setBusy(true);
 
-    const r = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
+      const r = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password }),
+      });
 
-    const data = await r.json();
+      const o = await safeReadJson(r);
+      if (!o.ok) throw new Error(o.data?.error || `LOGIN HTTP ${o.status}`);
 
-    if (!r.ok) {
-      setErr(data?.error || "Login failed");
-      return;
+      router.push("/admin");
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setBusy(false);
     }
-
-    router.push("/admin");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black text-white">
-      <div className="bg-[#111] p-8 rounded-xl w-80 space-y-4">
-        <h1 className="text-xl font-bold">Admin Login</h1>
+    <div className="min-h-screen" style={{ background: THEME.bg, color: THEME.text }}>
+      <Shell>
+        <div className="max-w-md mx-auto mt-10">
+          <Card accent="gold" title="Admin Login" subtitle="Only for fund operator">
+            <div className="mt-4 grid gap-3">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter ADMIN_PASSWORD"
+                className="w-full rounded-xl border px-3 py-2 text-sm outline-none"
+                style={{
+                  borderColor: "rgba(226,198,128,0.18)",
+                  background: "rgba(255,255,255,0.03)",
+                  color: THEME.text,
+                }}
+              />
 
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Enter password"
-          className="w-full p-2 bg-[#222] rounded"
-        />
+              <Button onClick={onLogin} disabled={busy || !password}>
+                {busy ? "Logging in…" : "Login"}
+              </Button>
 
-        <button
-          onClick={login}
-          className="w-full p-2 bg-yellow-500 text-black rounded font-semibold"
-        >
-          Login
-        </button>
-
-        {err && <div className="text-red-400 text-sm">{err}</div>}
-      </div>
+              {err ? (
+                <div className="text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
+                  {err}
+                </div>
+              ) : (
+                <div className="text-xs" style={{ color: THEME.muted }}>
+                  登入成功後會寫入 cookie（mf_admin=1），才能使用 Freeze ON/OFF。
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      </Shell>
     </div>
   );
 }

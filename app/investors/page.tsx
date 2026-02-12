@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
@@ -15,12 +15,25 @@ type PoolMetrics = {
   snapshot_id?: number | null;
 };
 
+type Ledger = {
+  user_id: string;
+  frozen: boolean;
+  nav_usd: number | null;
+  principal_usd: number; // 我的淨入金（SETTLED 入 - SETTLED 出）
+  pending_withdraw_usd: number; // 我的待提款（PENDING 提款加總）
+  total_principal_usd: number | null; // 全體淨入金（可能因 RLS 為 null）
+  profit_pool_usd: number | null; // 可能因 RLS 為 null
+  investor_pnl_usd: number | null; // Frozen 或 RLS 時為 null
+};
+
 function num(v: any): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 function fmtUsd(v: any) {
-  return num(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 function formatTime(ts: string | null) {
   if (!ts) return "—";
@@ -40,13 +53,19 @@ async function safeReadJson(r: Response) {
 }
 
 export default function InvestorsPage() {
-  const supabase = supabaseBrowser();
+  // ✅ 建議用 useMemo：避免每次 render 都重新 createClient
+  const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [pool, setPool] = useState<PoolMetrics | null>(null);
 
   const [authedEmail, setAuthedEmail] = useState<string | null>(null);
+
+  // investor ledger
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerErr, setLedgerErr] = useState<string | null>(null);
+  const [ledger, setLedger] = useState<Ledger | null>(null);
 
   // auth state
   useEffect(() => {
@@ -62,7 +81,7 @@ export default function InvestorsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function reload() {
+  async function reloadPool() {
     try {
       setErr(null);
       setLoading(true);
@@ -79,15 +98,65 @@ export default function InvestorsPage() {
     }
   }
 
+  async function reloadLedger() {
+    setLedgerErr(null);
+    setLedgerLoading(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) {
+        setLedger(null);
+        return;
+      }
+
+      const r = await fetch("/api/investor/ledger", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        cache: "no-store",
+      });
+
+      const o = await safeReadJson(r);
+      if (!o.ok) throw new Error(o.data?.error || `ledger HTTP ${o.status}`);
+
+      setLedger(o.data as Ledger);
+    } catch (e: any) {
+      setLedgerErr(e?.message || String(e));
+      setLedger(null);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
+  // 初次載入：基金資訊
   useEffect(() => {
-    reload();
+    reloadPool();
   }, []);
+
+  // 登入後才載入 ledger
+  useEffect(() => {
+    if (authedEmail) {
+      reloadLedger();
+    } else {
+      setLedger(null);
+      setLedgerErr(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authedEmail]);
 
   const navUsd = num(pool?.nav_usd ?? 0);
   const wtdUsd = num(pool?.wtd_usd ?? 0);
   const principalUsd = num(pool?.total_principal_usd ?? 0);
   const freeze = Boolean(pool?.freeze);
   const navTs = pool?.nav_ts ?? null;
+
+  const weekPnlPositive = wtdUsd >= 0;
+
+  async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/investors/login";
+  }
 
   if (loading) {
     return (
@@ -105,7 +174,7 @@ export default function InvestorsPage() {
         </div>
         <div className="mt-2 text-sm whitespace-pre-line">{err}</div>
         <button
-          onClick={reload}
+          onClick={reloadPool}
           className="mt-4 rounded-full border px-3 py-1 text-xs font-semibold"
           style={{
             borderColor: "rgba(226,198,128,0.18)",
@@ -118,8 +187,6 @@ export default function InvestorsPage() {
       </div>
     );
   }
-
-  const weekPnlPositive = wtdUsd >= 0;
 
   return (
     <Shell>
@@ -188,9 +255,7 @@ export default function InvestorsPage() {
                 {authedEmail}
               </div>
 
-              <Link href="/investors/logout">
-                <Button>登出</Button>
-              </Link>
+              <Button onClick={logout}>登出</Button>
             </>
           ) : (
             <Link href="/investors/login">
@@ -199,7 +264,10 @@ export default function InvestorsPage() {
           )}
 
           <button
-            onClick={reload}
+            onClick={() => {
+              reloadPool();
+              if (authedEmail) reloadLedger();
+            }}
             className="rounded-full border px-3 py-1 text-xs font-semibold transition"
             style={{
               borderColor: "rgba(226,198,128,0.18)",
@@ -232,29 +300,14 @@ export default function InvestorsPage() {
         </Card>
       </div>
 
-      {/* Investor ledger placeholder */}
+      {/* Investor Ledger */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card
           accent="gold"
-          title="我的帳本（即將上線）"
-          subtitle={authedEmail ? "已登入：下一步接我的帳本資料" : "請先登入以查看自己的帳本"}
+          title="我的帳本"
+          subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}
         >
-          {authedEmail ? (
-            <div className="text-sm" style={{ color: THEME.muted }}>
-              下一步會顯示：
-              <ul className="list-disc pl-5 mt-2 space-y-1">
-                <li>我的淨入金（Principal）</li>
-                <li>我的待提款（Pending）</li>
-                <li>我的目前損益（Freeze=true 時 Frozen）</li>
-                <li>入金申請（提交 + 列表）</li>
-                <li>提款申請（提交 + 列表）</li>
-              </ul>
-
-              <div className="mt-4 text-xs" style={{ color: THEME.muted }}>
-                * 之後會用 RLS：只允許 auth.uid() = user_id 的資料讀寫
-              </div>
-            </div>
-          ) : (
+          {!authedEmail ? (
             <div className="text-sm" style={{ color: THEME.muted }}>
               你目前尚未登入。
               <div className="mt-3">
@@ -263,6 +316,52 @@ export default function InvestorsPage() {
                 </Link>
               </div>
             </div>
+          ) : (
+            <>
+              {ledgerErr ? (
+                <div className="text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
+                  {ledgerErr}
+                  <div className="mt-3">
+                    <Button onClick={reloadLedger}>再試一次</Button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <Card accent="navy">
+                  <Metric
+                    label="我的淨入金"
+                    value={`${fmtUsd(ledger?.principal_usd ?? null)} 美元`}
+                    sub="SETTLED 入 - SETTLED 出"
+                  />
+                </Card>
+
+                <Card accent="blue">
+                  <Metric
+                    label="我的待提款"
+                    value={`${fmtUsd(ledger?.pending_withdraw_usd ?? null)} 美元`}
+                    sub="PENDING 提款加總"
+                  />
+                </Card>
+
+                <Card accent="good">
+                  <Metric
+                    label="我的目前損益"
+                    value={
+                      ledger?.frozen
+                        ? "Frozen"
+                        : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`
+                    }
+                    sub={ledger?.frozen ? "Freeze=true 不更新" : "比例分配損益"}
+                    tone={ledger?.frozen ? "muted" : (ledger?.investor_pnl_usd ?? 0) >= 0 ? "good" : "bad"}
+                  />
+                </Card>
+              </div>
+
+              <div className="mt-3 text-xs" style={{ color: THEME.muted }}>
+                {ledgerLoading ? "載入中…" : "＊提示：若 profit_pool / 全體 principal 顯示為空值（—），是因為 RLS 不允許投資人讀全體資料。下一步我會改成由 server 用 service role 計算後回傳。"}
+              </div>
+            </>
           )}
         </Card>
 
@@ -271,6 +370,12 @@ export default function InvestorsPage() {
             <div>profit_pool = NAV − 全體 principal 加總</div>
             <div className="mt-2">投資人損益 = profit_pool × (個人 principal / 全體 principal)</div>
             <div className="mt-2">Freeze = true 時：損益不更新、可提款上限凍結</div>
+
+            <div className="mt-4 text-xs" style={{ color: THEME.muted }}>
+              <div>NAV（from public）: {fmtUsd(ledger?.nav_usd ?? null)}</div>
+              <div>全體淨入金: {fmtUsd(ledger?.total_principal_usd ?? null)}</div>
+              <div>profit_pool: {fmtUsd(ledger?.profit_pool_usd ?? null)}</div>
+            </div>
           </div>
         </Card>
       </div>

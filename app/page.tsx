@@ -28,6 +28,7 @@ type PoolMetrics = {
   wtd_usd: number | string;
   total_principal_usd: number | string;
   freeze: boolean;
+  snapshot_id?: number | null;
 };
 
 type NavHistoryRow = { timestamp: string; total_nav: number | string };
@@ -205,6 +206,7 @@ export default function Page() {
   const wtdUsd = num(pool?.wtd_usd ?? 0);
   const principalUsd = num(pool?.total_principal_usd ?? 0);
   const freeze = Boolean(pool?.freeze);
+  const snapshotId = pool?.snapshot_id ?? null;
 
   const weekPnlPositive = wtdUsd >= 0;
 
@@ -274,11 +276,6 @@ export default function Page() {
     }));
   }, [allocRaw, allocScale]);
 
-  const allocTotal = useMemo(
-    () => allocRows.reduce((acc, r) => acc + num(r.value_usdt), 0),
-    [allocRows]
-  );
-
   // mismatch hint：比較 RAW sum vs NAV（畫圖仍用 NAV 對齊）
   const allocDiffPct = useMemo(() => {
     if (navUsd <= 0) return 0;
@@ -338,12 +335,9 @@ export default function Page() {
           </div>
 
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              MoneyFlow
-              <span className="ml-3 align-middle text-xs font-semibold" style={{ color: THEME.muted }}>
-                Fund Core Dashboard
-              </span>
-            </h1>
+            {/* ✅ 只留一份 MoneyFlow（刪除多餘那份 Fund Core Dashboard 那行） */}
+            <h1 className="text-3xl font-semibold tracking-tight">MoneyFlow</h1>
+
             <div className="mt-2 text-sm" style={{ color: THEME.muted }}>
               最後更新：{" "}
               <span className="font-medium" style={{ color: THEME.text }}>
@@ -360,12 +354,17 @@ export default function Page() {
                 FREEZE = {freeze ? "ON" : "OFF"}
               </span>
             </div>
+
+            <div className="mt-1 text-xs" style={{ color: THEME.muted }}>
+              Snapshot ID：{snapshotId ?? "—"}
+            </div>
           </div>
         </div>
 
+        {/* ✅ 右上角按鈕區塊：Investor Login 直接去 /investors/login */}
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            href="/investors"
+            href="/investors/login"
             className="rounded-full border px-3 py-1 text-xs font-semibold transition"
             style={{
               borderColor: "rgba(255,255,255,0.25)",
@@ -374,6 +373,19 @@ export default function Page() {
             }}
           >
             Investor Login
+          </Link>
+
+          <Link
+            href="/admin"
+            className="rounded-full border px-3 py-1 text-xs font-semibold transition"
+            style={{
+              borderColor: "rgba(226,198,128,0.18)",
+              color: THEME.gold2,
+              background: "rgba(212,175,55,0.10)",
+            }}
+            title="管理後台（需要登入）"
+          >
+            Admin
           </Link>
 
           <button

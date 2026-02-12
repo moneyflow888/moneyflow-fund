@@ -3,7 +3,7 @@ import { isAdmin } from "../_utils";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST() {
-  if (!isAdmin()) {
+  if (!(await isAdmin())) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
@@ -17,9 +17,7 @@ export async function POST() {
     .update({ freeze: true, updated_at: new Date().toISOString() })
     .eq("id", 1);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   return NextResponse.json({ ok: true, freeze: true });
 }

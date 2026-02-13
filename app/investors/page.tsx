@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
 
 type LedgerResponse = {
@@ -23,12 +23,7 @@ type ReqRow = {
   created_at: string;
 };
 
-async function getAccessToken(): Promise<string | null> {
-  const { data } = await supabaseBrowser.auth.getSession();
-  return data.session?.access_token ?? null;
-}
-
-function fmt(n: any): string {
+function fmt(n: unknown): string {
   const x = Number(n);
   if (!Number.isFinite(x)) return "—";
   return x.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -54,6 +49,14 @@ export default function InvestorsPage() {
 
   const frozen = !!ledger?.frozen;
 
+  async function getAccessToken(): Promise<string | null> {
+    const sb = getSupabaseBrowserClient();
+    if (!sb) return null;
+    const { data, error } = await sb.auth.getSession();
+    if (error) return null;
+    return data.session?.access_token ?? null;
+  }
+
   async function loadAll() {
     setLedgerErr(null);
     setDepErr(null);
@@ -65,7 +68,7 @@ export default function InvestorsPage() {
       return;
     }
 
-    // 1) ledger (existing)
+    // 1) ledger
     try {
       const r = await fetch("/api/investor/ledger", {
         headers: { Authorization: `Bearer ${token}` },
@@ -107,16 +110,34 @@ export default function InvestorsPage() {
   }
 
   useEffect(() => {
-    // session email
-    supabaseBrowser.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
-    });
-    loadAll();
+    let mounted = true;
+
+    (async () => {
+      const sb = getSupabaseBrowserClient();
+      if (!sb) return;
+
+      try {
+        const { data, error } = await sb.auth.getUser();
+        if (!mounted) return;
+        if (error) throw error;
+        setEmail(data.user?.email ?? null);
+      } catch {
+        if (!mounted) return;
+        setEmail(null);
+      }
+
+      if (mounted) await loadAll();
+    })();
+
+    return () => {
+      mounted = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function logout() {
-    await supabaseBrowser.auth.signOut();
+    const sb = getSupabaseBrowserClient();
+    if (sb) await sb.auth.signOut();
     window.location.href = "/investors/login";
   }
 
@@ -187,7 +208,9 @@ export default function InvestorsPage() {
   const headerRight = (
     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
       <Button onClick={loadAll}>重新載入</Button>
-      <Button onClick={logout} tone="bad">登出</Button>
+      <Button onClick={logout} tone="bad">
+        登出
+      </Button>
     </div>
   );
 
@@ -199,7 +222,6 @@ export default function InvestorsPage() {
       theme={THEME}
     >
       <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
-        {/* Ledger summary (keep your existing ledger concept) */}
         <div style={{ gridColumn: "span 12" }}>
           <Card title="我的帳本（只吃 SETTLED）" accent={frozen ? "gold" : "none"}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
@@ -222,15 +244,12 @@ export default function InvestorsPage() {
               </div>
 
               {ledgerErr ? (
-                <div style={{ gridColumn: "span 12", color: "rgba(255,120,120,0.9)" }}>
-                  {ledgerErr}
-                </div>
+                <div style={{ gridColumn: "span 12", color: "rgba(255,120,120,0.9)" }}>{ledgerErr}</div>
               ) : null}
             </div>
           </Card>
         </div>
 
-        {/* Deposit requests */}
         <div style={{ gridColumn: "span 6" }}>
           <Card title="入金申請（PENDING）" accent="none">
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
@@ -267,9 +286,7 @@ export default function InvestorsPage() {
               }}
             />
 
-            {depErr ? (
-              <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{depErr}</div>
-            ) : null}
+            {depErr ? <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{depErr}</div> : null}
 
             <div style={{ display: "grid", gap: 8 }}>
               {depRows.length === 0 ? (
@@ -303,7 +320,6 @@ export default function InvestorsPage() {
           </Card>
         </div>
 
-        {/* Withdraw requests */}
         <div style={{ gridColumn: "span 6" }}>
           <Card title="提款申請（PENDING）" accent="none">
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
@@ -340,9 +356,7 @@ export default function InvestorsPage() {
               }}
             />
 
-            {wdErr ? (
-              <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{wdErr}</div>
-            ) : null}
+            {wdErr ? <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{wdErr}</div> : null}
 
             <div style={{ display: "grid", gap: 8 }}>
               {wdRows.length === 0 ? (

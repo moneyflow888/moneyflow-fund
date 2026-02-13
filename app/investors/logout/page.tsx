@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Shell, Card, THEME, Button } from "@/components/mf/MfUi";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
@@ -11,25 +11,36 @@ export default function InvestorLogoutPage() {
   const [msg, setMsg] = useState("登出中…");
   const [err, setErr] = useState<string | null>(null);
 
+  // 避免 React StrictMode 在 dev 下執行兩次
+  const didRun = useRef(false);
+
   useEffect(() => {
+    if (didRun.current) return;
+    didRun.current = true;
+
     let mounted = true;
 
-    (async () => {
+    const run = async () => {
       try {
-        const sb = getSupabaseBrowserClient(); // ✅ 使用新函式名稱
+        const sb = getSupabaseBrowserClient();
         await sb.auth.signOut();
 
         if (!mounted) return;
+
         setMsg("已登出，正在返回登入頁…");
 
-        // 直接跳轉（避免 router 依賴）
-        window.location.href = "/investors/login";
+        // 小延遲讓畫面顯示訊息
+        setTimeout(() => {
+          window.location.href = "/investors/login";
+        }, 800);
       } catch (e: any) {
         if (!mounted) return;
         setErr(e?.message || String(e));
         setMsg("登出失敗");
       }
-    })();
+    };
+
+    run();
 
     return () => {
       mounted = false;
@@ -43,7 +54,11 @@ export default function InvestorLogoutPage() {
     >
       <Shell>
         <div className="max-w-lg mx-auto mt-10">
-          <Card accent="gold" title="Investor Logout" subtitle="Supabase Auth">
+          <Card
+            accent="gold"
+            title="Investor Logout"
+            subtitle="Supabase Auth"
+          >
             <div
               className="mt-3 text-sm"
               style={{ color: THEME.muted }}
@@ -51,14 +66,14 @@ export default function InvestorLogoutPage() {
               {msg}
             </div>
 
-            {err ? (
+            {err && (
               <div
                 className="mt-3 text-sm whitespace-pre-line"
                 style={{ color: THEME.bad }}
               >
                 {err}
               </div>
-            ) : null}
+            )}
 
             <div className="mt-5 flex gap-2">
               <Link href="/investors/login">

@@ -304,7 +304,11 @@ export default function InvestorsPage() {
 
       {/* Investor Ledger */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card accent="gold" title="我的帳本" subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}>
+        <Card
+          accent="gold"
+          title="我的帳本"
+          subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}
+        >
           {!authedEmail ? (
             <div className="text-sm" style={{ color: THEME.muted }}>
               你目前尚未登入。
@@ -340,7 +344,11 @@ export default function InvestorsPage() {
                     value={ledger?.frozen ? "Frozen" : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`}
                     sub={ledger?.frozen ? "Freeze=true 不更新" : "比例分配損益"}
                     tone={
-                      ledger?.frozen ? "muted" : (ledger?.investor_pnl_usd ?? 0) >= 0 ? "good" : "bad"
+                      ledger?.frozen
+                        ? "neutral"
+                        : (ledger?.investor_pnl_usd ?? 0) >= 0
+                        ? "good"
+                        : "bad"
                     }
                   />
                 </Card>

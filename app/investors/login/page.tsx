@@ -4,14 +4,15 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shell, Card, THEME, Button } from "@/components/mf/MfUi";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
 export default function InvestorLoginPage() {
   const router = useRouter();
 
-  const [supabase, setSupabase] = useState<ReturnType<typeof supabaseBrowser> | null>(null);
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
 
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -21,10 +22,15 @@ export default function InvestorLoginPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // ✅ 只在瀏覽器掛載後才建立 supabase client（避免 prerender/build 觸發）
+  // ✅ 只在瀏覽器掛載後才建立 supabase client
   useEffect(() => {
     try {
-      const sb = supabaseBrowser();
+      const sb = getSupabaseBrowserClient();
+      if (!sb) {
+        setErr("Missing env: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
+        return;
+      }
+
       setSupabase(sb);
 
       // 如果已登入就直接回 investors
@@ -143,8 +149,16 @@ export default function InvestorLoginPage() {
                 {busy ? "處理中…" : mode === "login" ? "登入" : "建立帳號"}
               </Button>
 
-              {msg ? <div className="text-sm" style={{ color: THEME.good }}>{msg}</div> : null}
-              {err ? <div className="text-sm" style={{ color: THEME.bad }}>{err}</div> : null}
+              {msg ? (
+                <div className="text-sm" style={{ color: THEME.good }}>
+                  {msg}
+                </div>
+              ) : null}
+              {err ? (
+                <div className="text-sm" style={{ color: THEME.bad }}>
+                  {err}
+                </div>
+              ) : null}
 
               <div className="text-xs" style={{ color: THEME.muted }}>
                 * 帳本資料之後會綁定 auth.user.id（RLS 只讓投資人看自己的資料）

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Shell, Card, THEME, Button } from "@/components/mf/MfUi";
-import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +16,13 @@ export default function InvestorLogoutPage() {
 
     (async () => {
       try {
-        const sb = supabaseBrowser(); // ✅ 只在 useEffect（瀏覽器）建立
+        const sb = getSupabaseBrowserClient(); // ✅ 使用新函式名稱
         await sb.auth.signOut();
 
         if (!mounted) return;
         setMsg("已登出，正在返回登入頁…");
 
-        // ✅ 用 location 直接跳，最穩（避免 router 依賴）
+        // 直接跳轉（避免 router 依賴）
         window.location.href = "/investors/login";
       } catch (e: any) {
         if (!mounted) return;
@@ -37,16 +37,25 @@ export default function InvestorLogoutPage() {
   }, []);
 
   return (
-    <div className="min-h-screen" style={{ background: THEME.bg, color: THEME.text }}>
+    <div
+      className="min-h-screen"
+      style={{ background: THEME.bg, color: THEME.text }}
+    >
       <Shell>
         <div className="max-w-lg mx-auto mt-10">
           <Card accent="gold" title="Investor Logout" subtitle="Supabase Auth">
-            <div className="mt-3 text-sm" style={{ color: THEME.muted }}>
+            <div
+              className="mt-3 text-sm"
+              style={{ color: THEME.muted }}
+            >
               {msg}
             </div>
 
             {err ? (
-              <div className="mt-3 text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
+              <div
+                className="mt-3 text-sm whitespace-pre-line"
+                style={{ color: THEME.bad }}
+              >
                 {err}
               </div>
             ) : null}

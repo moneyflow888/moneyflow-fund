@@ -3,11 +3,13 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+
+export const dynamic = "force-dynamic";
 
 type PoolMetrics = {
   nav_usd: number | string;
@@ -24,7 +26,6 @@ type Ledger = {
   nav_usd: number | null;
   principal_usd: number | null;
   pending_withdraw_usd: number | null;
-
   total_principal_usd: number | null;
   profit_pool_usd: number | null;
   investor_pnl_usd: number | null;
@@ -34,20 +35,17 @@ function num(v: any): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
-
 function fmtUsd(v: any) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
-
 function formatTime(ts: string | null) {
   if (!ts) return "—";
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
   return d.toLocaleString();
 }
-
 async function safeReadJson(r: Response) {
   const text = await r.text();
   if (!text) return { ok: r.ok, status: r.status, data: null as any };
@@ -59,7 +57,7 @@ async function safeReadJson(r: Response) {
 }
 
 export default function InvestorsPage() {
-  const supabase = useMemo(() => supabaseBrowser(), []);
+  const [supabase, setSupabase] = useState<ReturnType<typeof supabaseBrowser> | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -71,18 +69,26 @@ export default function InvestorsPage() {
   const [ledgerErr, setLedgerErr] = useState<string | null>(null);
   const [ledger, setLedger] = useState<Ledger | null>(null);
 
-  // auth state
+  // ✅ 只在瀏覽器掛載後建立 supabase client
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setAuthedEmail(data.session?.user?.email ?? null);
-    });
+    try {
+      const sb = supabaseBrowser();
+      setSupabase(sb);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthedEmail(session?.user?.email ?? null);
-    });
+      sb.auth.getSession().then(({ data }) => {
+        setAuthedEmail(data.session?.user?.email ?? null);
+      });
 
-    return () => sub.subscription.unsubscribe();
-  }, [supabase]);
+      const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+        setAuthedEmail(session?.user?.email ?? null);
+      });
+
+      return () => sub.subscription.unsubscribe();
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+      setLoading(false);
+    }
+  }, []);
 
   async function reloadPool() {
     try {
@@ -102,6 +108,8 @@ export default function InvestorsPage() {
   }
 
   async function reloadLedger() {
+    if (!supabase) return;
+
     setLedgerErr(null);
     setLedgerLoading(true);
 
@@ -115,9 +123,7 @@ export default function InvestorsPage() {
 
       const r = await fetch("/api/investor/ledger", {
         method: "GET",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
         cache: "no-store",
       });
 
@@ -139,13 +145,14 @@ export default function InvestorsPage() {
   }, []);
 
   useEffect(() => {
+    if (!supabase) return;
     if (authedEmail) reloadLedger();
     else {
       setLedger(null);
       setLedgerErr(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authedEmail]);
+  }, [authedEmail, supabase]);
 
   const navUsd = num(pool?.nav_usd ?? 0);
   const wtdUsd = num(pool?.wtd_usd ?? 0);
@@ -156,6 +163,7 @@ export default function InvestorsPage() {
   const weekPnlPositive = wtdUsd >= 0;
 
   async function logout() {
+    if (!supabase) return;
     await supabase.auth.signOut();
     window.location.href = "/investors/login";
   }
@@ -257,7 +265,9 @@ export default function InvestorsPage() {
                 {authedEmail}
               </div>
 
-              <Button onClick={logout}>登出</Button>
+              <Button onClick={logout} disabled={!supabase}>
+                登出
+              </Button>
             </>
           ) : (
             <Link href="/investors/login">
@@ -304,11 +314,7 @@ export default function InvestorsPage() {
 
       {/* Investor Ledger */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card
-          accent="gold"
-          title="我的帳本"
-          subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}
-        >
+        <Card accent="gold" title="我的帳本" subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}>
           {!authedEmail ? (
             <div className="text-sm" style={{ color: THEME.muted }}>
               你目前尚未登入。
@@ -324,7 +330,9 @@ export default function InvestorsPage() {
                 <div className="text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
                   {ledgerErr}
                   <div className="mt-3">
-                    <Button onClick={reloadLedger}>再試一次</Button>
+                    <Button onClick={reloadLedger} disabled={!supabase}>
+                      再試一次
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -343,19 +351,13 @@ export default function InvestorsPage() {
                     label="我的目前損益"
                     value={ledger?.frozen ? "Frozen" : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`}
                     sub={ledger?.frozen ? "Freeze=true 不更新" : "比例分配損益"}
-                    tone={
-                      ledger?.frozen
-                        ? "neutral"
-                        : (ledger?.investor_pnl_usd ?? 0) >= 0
-                        ? "good"
-                        : "bad"
-                    }
+                    tone={ledger?.frozen ? "neutral" : (ledger?.investor_pnl_usd ?? 0) >= 0 ? "good" : "bad"}
                   />
                 </Card>
               </div>
 
               <div className="mt-3 text-xs" style={{ color: THEME.muted }}>
-                {ledgerLoading ? "載入中…" : "＊若全體淨入金 / profit_pool 顯示 —，代表 API 回傳為 null（或尚未接完整總表計算）。"}
+                {ledgerLoading ? "載入中…" : ""}
               </div>
             </>
           )}

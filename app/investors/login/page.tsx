@@ -1,16 +1,17 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Shell, Card, THEME, Button } from "@/components/mf/MfUi";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 
+export const dynamic = "force-dynamic";
+
 export default function InvestorLoginPage() {
   const router = useRouter();
 
-  // ✅ 用 useMemo 包起來，避免在 build/分析階段就初始化
-  const supabase = useMemo(() => supabaseBrowser(), []);
+  const [supabase, setSupabase] = useState<ReturnType<typeof supabaseBrowser> | null>(null);
 
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -20,11 +21,19 @@ export default function InvestorLoginPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  // 如果已登入就直接回 investors
+  // ✅ 只在瀏覽器掛載後才建立 supabase client（避免 prerender/build 觸發）
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/investors");
-    });
+    try {
+      const sb = supabaseBrowser();
+      setSupabase(sb);
+
+      // 如果已登入就直接回 investors
+      sb.auth.getSession().then(({ data }) => {
+        if (data.session) router.replace("/investors");
+      });
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -34,6 +43,7 @@ export default function InvestorLoginPage() {
       setMsg(null);
       setBusy(true);
 
+      if (!supabase) throw new Error("初始化中…請稍等 1 秒再試一次");
       if (!email || !password) throw new Error("請輸入 Email 與密碼");
 
       if (mode === "login") {
@@ -129,7 +139,7 @@ export default function InvestorLoginPage() {
                 }}
               />
 
-              <Button onClick={submit} disabled={busy}>
+              <Button onClick={submit} disabled={busy || !supabase}>
                 {busy ? "處理中…" : mode === "login" ? "登入" : "建立帳號"}
               </Button>
 

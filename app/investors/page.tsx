@@ -1,381 +1,388 @@
-// FORCE REDEPLOY 1
-// FORCE CLEAN DEPLOY 6
-
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
+import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
 
-export const dynamic = "force-dynamic";
-
-type PoolMetrics = {
-  nav_usd: number | string;
-  nav_ts: string | null;
-  wtd_usd: number | string;
-  total_principal_usd: number | string;
-  freeze: boolean;
+type LedgerResponse = {
+  email?: string | null;
+  principal_usd?: number | null;
+  pending_withdraw_usd?: number | null;
+  investor_pnl_usd?: number | null;
+  frozen?: boolean;
+  nav_usd?: number | null;
   snapshot_id?: number | null;
 };
 
-type Ledger = {
-  user_id: string;
-  frozen: boolean;
-  nav_usd: number | null;
-  principal_usd: number | null;
-  pending_withdraw_usd: number | null;
-  total_principal_usd: number | null;
-  profit_pool_usd: number | null;
-  investor_pnl_usd: number | null;
+type ReqRow = {
+  id: number;
+  amount_usd: number;
+  status: string;
+  note: string | null;
+  created_at: string;
 };
 
-function num(v: any): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabaseBrowser.auth.getSession();
+  return data.session?.access_token ?? null;
 }
-function fmtUsd(v: any) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-function formatTime(ts: string | null) {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return ts;
-  return d.toLocaleString();
-}
-async function safeReadJson(r: Response) {
-  const text = await r.text();
-  if (!text) return { ok: r.ok, status: r.status, data: null as any };
-  try {
-    return { ok: r.ok, status: r.status, data: JSON.parse(text) };
-  } catch {
-    return { ok: r.ok, status: r.status, data: null as any };
-  }
+
+function fmt(n: any): string {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "—";
+  return x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 export default function InvestorsPage() {
-  const [supabase, setSupabase] = useState<ReturnType<typeof supabaseBrowser> | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
 
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [pool, setPool] = useState<PoolMetrics | null>(null);
-
-  const [authedEmail, setAuthedEmail] = useState<string | null>(null);
-
-  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledger, setLedger] = useState<LedgerResponse | null>(null);
   const [ledgerErr, setLedgerErr] = useState<string | null>(null);
-  const [ledger, setLedger] = useState<Ledger | null>(null);
 
-  // ✅ 只在瀏覽器掛載後建立 supabase client
-  useEffect(() => {
-    try {
-      const sb = supabaseBrowser();
-      setSupabase(sb);
+  const [depAmt, setDepAmt] = useState<string>("1000");
+  const [depNote, setDepNote] = useState<string>("");
+  const [depRows, setDepRows] = useState<ReqRow[]>([]);
+  const [depErr, setDepErr] = useState<string | null>(null);
+  const [depBusy, setDepBusy] = useState(false);
 
-      sb.auth.getSession().then(({ data }) => {
-        setAuthedEmail(data.session?.user?.email ?? null);
-      });
+  const [wdAmt, setWdAmt] = useState<string>("100");
+  const [wdNote, setWdNote] = useState<string>("");
+  const [wdRows, setWdRows] = useState<ReqRow[]>([]);
+  const [wdErr, setWdErr] = useState<string | null>(null);
+  const [wdBusy, setWdBusy] = useState(false);
 
-      const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
-        setAuthedEmail(session?.user?.email ?? null);
-      });
+  const frozen = !!ledger?.frozen;
 
-      return () => sub.subscription.unsubscribe();
-    } catch (e: any) {
-      setErr(e?.message || String(e));
-      setLoading(false);
-    }
-  }, []);
-
-  async function reloadPool() {
-    try {
-      setErr(null);
-      setLoading(true);
-
-      const r = await fetch("/api/public/pool-metrics", { cache: "no-store" });
-      const o = await safeReadJson(r);
-      if (!o.ok) throw new Error(o.data?.error || `pool-metrics HTTP ${o.status}`);
-
-      setPool(o.data as PoolMetrics);
-    } catch (e: any) {
-      setErr(e?.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function reloadLedger() {
-    if (!supabase) return;
-
+  async function loadAll() {
     setLedgerErr(null);
-    setLedgerLoading(true);
+    setDepErr(null);
+    setWdErr(null);
 
+    const token = await getAccessToken();
+    if (!token) {
+      setLedgerErr("Not logged in.");
+      return;
+    }
+
+    // 1) ledger (existing)
     try {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session;
-      if (!session) {
-        setLedger(null);
-        return;
-      }
-
       const r = await fetch("/api/investor/ledger", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-
-      const o = await safeReadJson(r);
-      if (!o.ok) throw new Error(o.data?.error || `ledger HTTP ${o.status}`);
-
-      setLedger(o.data as Ledger);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "ledger failed");
+      setLedger(j);
+      if (j?.email) setEmail(j.email);
     } catch (e: any) {
-      setLedgerErr(e?.message || String(e));
-      setLedger(null);
-    } finally {
-      setLedgerLoading(false);
+      setLedgerErr(e?.message ?? "ledger error");
+    }
+
+    // 2) deposits list
+    try {
+      const r = await fetch("/api/investor/deposits", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "deposits failed");
+      setDepRows(j?.rows ?? []);
+    } catch (e: any) {
+      setDepErr(e?.message ?? "deposits error");
+    }
+
+    // 3) withdraws list
+    try {
+      const r = await fetch("/api/investor/withdraws", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "withdraws failed");
+      setWdRows(j?.rows ?? []);
+    } catch (e: any) {
+      setWdErr(e?.message ?? "withdraws error");
     }
   }
 
   useEffect(() => {
-    reloadPool();
+    // session email
+    supabaseBrowser.auth.getUser().then(({ data }) => {
+      setEmail(data.user?.email ?? null);
+    });
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!supabase) return;
-    if (authedEmail) reloadLedger();
-    else {
-      setLedger(null);
-      setLedgerErr(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authedEmail, supabase]);
-
-  const navUsd = num(pool?.nav_usd ?? 0);
-  const wtdUsd = num(pool?.wtd_usd ?? 0);
-  const principalUsd = num(pool?.total_principal_usd ?? 0);
-  const freeze = Boolean(pool?.freeze);
-  const navTs = pool?.nav_ts ?? null;
-
-  const weekPnlPositive = wtdUsd >= 0;
-
   async function logout() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    await supabaseBrowser.auth.signOut();
     window.location.href = "/investors/login";
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen p-10" style={{ background: THEME.bg, color: THEME.muted }}>
-        Loading…
-      </div>
-    );
+  async function submitDeposit() {
+    setDepErr(null);
+    setDepBusy(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Not logged in");
+
+      const amount_usd = Number(depAmt);
+      if (!Number.isFinite(amount_usd) || amount_usd <= 0) {
+        throw new Error("請輸入正確的入金金額（> 0）");
+      }
+
+      const r = await fetch("/api/investor/deposit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount_usd, note: depNote || null }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "deposit failed");
+
+      setDepNote("");
+      await loadAll();
+    } catch (e: any) {
+      setDepErr(e?.message ?? "deposit error");
+    } finally {
+      setDepBusy(false);
+    }
   }
 
-  if (err) {
-    return (
-      <div className="min-h-screen p-10" style={{ background: THEME.bg, color: THEME.muted }}>
-        <div className="font-semibold" style={{ color: THEME.bad }}>
-          Error
-        </div>
-        <div className="mt-2 text-sm whitespace-pre-line">{err}</div>
-        <button
-          onClick={reloadPool}
-          className="mt-4 rounded-full border px-3 py-1 text-xs font-semibold"
-          style={{
-            borderColor: "rgba(226,198,128,0.18)",
-            color: THEME.gold2,
-            background: "rgba(212,175,55,0.10)",
-          }}
-        >
-          重新載入
-        </button>
-      </div>
-    );
+  async function submitWithdraw() {
+    setWdErr(null);
+    setWdBusy(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Not logged in");
+
+      const amount_usd = Number(wdAmt);
+      if (!Number.isFinite(amount_usd) || amount_usd <= 0) {
+        throw new Error("請輸入正確的提款金額（> 0）");
+      }
+
+      const r = await fetch("/api/investor/withdraw", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount_usd, note: wdNote || null }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "withdraw failed");
+
+      setWdNote("");
+      await loadAll();
+    } catch (e: any) {
+      setWdErr(e?.message ?? "withdraw error");
+    } finally {
+      setWdBusy(false);
+    }
   }
+
+  const headerRight = (
+    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <Button onClick={loadAll}>重新載入</Button>
+      <Button onClick={logout} tone="bad">登出</Button>
+    </div>
+  );
 
   return (
-    <Shell>
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="mt-1">
-            <Image src="/logo.png" alt="MoneyFlow" width={88} height={88} className="rounded-xl" />
-          </div>
-
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              MoneyFlow
-              <span className="ml-3 align-middle text-xs font-semibold" style={{ color: THEME.muted }}>
-                Investor Portal
-              </span>
-            </h1>
-
-            <div className="mt-2 text-sm" style={{ color: THEME.muted }}>
-              基金最後更新：{" "}
-              <span className="font-medium" style={{ color: THEME.text }}>
-                {formatTime(navTs)}
-              </span>
-              <span
-                className="ml-3 rounded-full border px-2 py-0.5 text-xs font-semibold"
-                style={{
-                  borderColor: freeze ? "rgba(226,198,128,0.35)" : "rgba(34,197,94,0.30)",
-                  color: freeze ? THEME.gold2 : THEME.good,
-                  background: freeze ? "rgba(212,175,55,0.10)" : "rgba(34,197,94,0.10)",
-                }}
-              >
-                FREEZE = {freeze ? "ON" : "OFF"}
-              </span>
-            </div>
-
-            <div className="mt-2 text-xs" style={{ color: THEME.muted }}>
-              * 投資人損益會在 Freeze=true 時凍結（不更新）
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/"
-            className="rounded-full border px-3 py-1 text-xs font-semibold transition"
-            style={{
-              borderColor: "rgba(255,255,255,0.20)",
-              color: "rgba(255,255,255,0.92)",
-              background: "rgba(255,255,255,0.08)",
-            }}
-          >
-            回公開首頁
-          </Link>
-
-          {authedEmail ? (
-            <>
-              <div
-                className="rounded-full border px-3 py-1 text-xs font-semibold"
-                style={{
-                  borderColor: "rgba(255,255,255,0.18)",
-                  background: "rgba(255,255,255,0.06)",
-                  color: "rgba(255,255,255,0.9)",
-                }}
-                title="已登入"
-              >
-                {authedEmail}
+    <Shell
+      title="Investor Portal"
+      subtitle={email ? `Logged in as ${email}` : "Not logged in"}
+      right={headerRight}
+      theme={THEME}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
+        {/* Ledger summary (keep your existing ledger concept) */}
+        <div style={{ gridColumn: "span 12" }}>
+          <Card title="我的帳本（只吃 SETTLED）" accent={frozen ? "gold" : "none"}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
+              <div style={{ gridColumn: "span 4" }}>
+                <Metric label="我的淨入金 (Principal)" value={`${fmt(ledger?.principal_usd)} USD`} />
+              </div>
+              <div style={{ gridColumn: "span 4" }}>
+                <Metric label="我的待提款 (Pending)" value={`${fmt(ledger?.pending_withdraw_usd)} USD`} />
+              </div>
+              <div style={{ gridColumn: "span 4" }}>
+                <Metric
+                  label={frozen ? "目前損益 (Frozen)" : "目前損益 (PnL)"}
+                  value={`${fmt(ledger?.investor_pnl_usd)} USD`}
+                  tone={frozen ? "muted" : "good"}
+                />
               </div>
 
-              <Button onClick={logout} disabled={!supabase}>
-                登出
-              </Button>
-            </>
-          ) : (
-            <Link href="/investors/login">
-              <Button>投資人登入</Button>
-            </Link>
-          )}
-
-          <button
-            onClick={() => {
-              reloadPool();
-              if (authedEmail) reloadLedger();
-            }}
-            className="rounded-full border px-3 py-1 text-xs font-semibold transition"
-            style={{
-              borderColor: "rgba(226,198,128,0.18)",
-              color: THEME.gold2,
-              background: "rgba(212,175,55,0.10)",
-            }}
-          >
-            重新載入
-          </button>
-        </div>
-      </div>
-
-      {/* Fund KPI */}
-      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card accent="gold">
-          <Metric label="基金總淨值（NAV）" value={`${fmtUsd(navUsd)} 美元`} sub="USD（只讀）" />
-        </Card>
-
-        <Card accent={weekPnlPositive ? "good" : "bad"}>
-          <Metric
-            label="基金本週損益（WTD）"
-            value={`${weekPnlPositive ? "+" : ""}${fmtUsd(wtdUsd)} 美元`}
-            sub="WTD（週日歸零）"
-            tone={weekPnlPositive ? "good" : "bad"}
-          />
-        </Card>
-
-        <Card accent="navy">
-          <Metric label="全體淨入金（Principal）" value={`${fmtUsd(principalUsd)} 美元`} sub="入金累積 − 出金累積" />
-        </Card>
-      </div>
-
-      {/* Investor Ledger */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card accent="gold" title="我的帳本" subtitle={authedEmail ? "已登入：顯示我的 Principal / Pending / PnL" : "請先登入以查看自己的帳本"}>
-          {!authedEmail ? (
-            <div className="text-sm" style={{ color: THEME.muted }}>
-              你目前尚未登入。
-              <div className="mt-3">
-                <Link href="/investors/login">
-                  <Button>前往登入 / 註冊</Button>
-                </Link>
+              <div style={{ gridColumn: "span 12", opacity: 0.75, fontSize: 12 }}>
+                規則：principal 只計入 status=SETTLED。你現在送出 PENDING 不會影響 principal（直到你 Admin 結算）。
               </div>
-            </div>
-          ) : (
-            <>
+
               {ledgerErr ? (
-                <div className="text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
+                <div style={{ gridColumn: "span 12", color: "rgba(255,120,120,0.9)" }}>
                   {ledgerErr}
-                  <div className="mt-3">
-                    <Button onClick={reloadLedger} disabled={!supabase}>
-                      再試一次
-                    </Button>
-                  </div>
                 </div>
               ) : null}
-
-              <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-3">
-                <Card accent="navy">
-                  <Metric label="我的淨入金" value={`${fmtUsd(ledger?.principal_usd ?? null)} 美元`} sub="SETTLED 入 − SETTLED 出" />
-                </Card>
-
-                <Card accent="navy">
-                  <Metric label="我的待提款" value={`${fmtUsd(ledger?.pending_withdraw_usd ?? null)} 美元`} sub="PENDING 提款加總" />
-                </Card>
-
-                <Card accent="good">
-                  <Metric
-                    label="我的目前損益"
-                    value={ledger?.frozen ? "Frozen" : `${fmtUsd(ledger?.investor_pnl_usd ?? null)} 美元`}
-                    sub={ledger?.frozen ? "Freeze=true 不更新" : "比例分配損益"}
-                    tone={ledger?.frozen ? "neutral" : (ledger?.investor_pnl_usd ?? 0) >= 0 ? "good" : "bad"}
-                  />
-                </Card>
-              </div>
-
-              <div className="mt-3 text-xs" style={{ color: THEME.muted }}>
-                {ledgerLoading ? "載入中…" : ""}
-              </div>
-            </>
-          )}
-        </Card>
-
-        <Card accent="navy" title="規則提示" subtitle="你確認的規則 7~10（核心）">
-          <div className="text-sm leading-6" style={{ color: THEME.muted }}>
-            <div>profit_pool = NAV − 全體 principal 加總</div>
-            <div className="mt-2">投資人損益 = profit_pool × (個人 principal / 全體 principal)</div>
-            <div className="mt-2">Freeze = true 時：損益不更新、可提款上限凍結</div>
-
-            <div className="mt-4 text-xs" style={{ color: THEME.muted }}>
-              <div>NAV（from ledger/public）: {fmtUsd(ledger?.nav_usd ?? null)}</div>
-              <div>全體淨入金: {fmtUsd(ledger?.total_principal_usd ?? null)}</div>
-              <div>profit_pool: {fmtUsd(ledger?.profit_pool_usd ?? null)}</div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
+
+        {/* Deposit requests */}
+        <div style={{ gridColumn: "span 6" }}>
+          <Card title="入金申請（PENDING）" accent="none">
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <input
+                value={depAmt}
+                onChange={(e) => setDepAmt(e.target.value)}
+                placeholder="amount_usd"
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(0,0,0,0.25)",
+                  color: "rgba(255,255,255,0.9)",
+                }}
+              />
+              <Button onClick={submitDeposit} disabled={depBusy}>
+                {depBusy ? "送出中…" : "提交入金"}
+              </Button>
+            </div>
+
+            <input
+              value={depNote}
+              onChange={(e) => setDepNote(e.target.value)}
+              placeholder="備註（選填）"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.25)",
+                color: "rgba(255,255,255,0.9)",
+                marginBottom: 12,
+              }}
+            />
+
+            {depErr ? (
+              <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{depErr}</div>
+            ) : null}
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {depRows.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>尚無入金申請</div>
+              ) : (
+                depRows.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, opacity: 0.95 }}>
+                        #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.65 }}>
+                        {new Date(r.created_at).toLocaleString()} {r.note ? `· ${r.note}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* Withdraw requests */}
+        <div style={{ gridColumn: "span 6" }}>
+          <Card title="提款申請（PENDING）" accent="none">
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+              <input
+                value={wdAmt}
+                onChange={(e) => setWdAmt(e.target.value)}
+                placeholder="amount_usd"
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(0,0,0,0.25)",
+                  color: "rgba(255,255,255,0.9)",
+                }}
+              />
+              <Button onClick={submitWithdraw} disabled={wdBusy} tone="warn">
+                {wdBusy ? "送出中…" : "提交提款"}
+              </Button>
+            </div>
+
+            <input
+              value={wdNote}
+              onChange={(e) => setWdNote(e.target.value)}
+              placeholder="備註（選填）"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.25)",
+                color: "rgba(255,255,255,0.9)",
+                marginBottom: 12,
+              }}
+            />
+
+            {wdErr ? (
+              <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{wdErr}</div>
+            ) : null}
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {wdRows.length === 0 ? (
+                <div style={{ opacity: 0.7 }}>尚無提款申請</div>
+              ) : (
+                wdRows.map((r) => (
+                  <div
+                    key={r.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, opacity: 0.95 }}>
+                        #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.65 }}>
+                        {new Date(r.created_at).toLocaleString()} {r.note ? `· ${r.note}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+
+        <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
+          提醒：這是 Sprint 1（只打通 PENDING 管線）。要讓 principal 變動，下一步 Sprint 2 會做 Admin 結算（PENDING → SETTLED）。
+        </div>
+
+        <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
+          <Link href="/">回首頁</Link>
+        </div>
       </div>
     </Shell>
   );

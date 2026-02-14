@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
@@ -29,17 +29,6 @@ function fmt(n: unknown): string {
   return x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-async function safeJson(r: Response): Promise<any> {
-  // 避免 204 / 非 JSON 直接 throw
-  const text = await r.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return { raw: text };
-  }
-}
-
 export default function InvestorsPage() {
   const [email, setEmail] = useState<string | null>(null);
 
@@ -60,13 +49,9 @@ export default function InvestorsPage() {
 
   const frozen = !!ledger?.frozen;
 
-  // 避免 StrictMode 觸發兩次造成重複 load
-  const didInit = useRef(false);
-
   async function getAccessToken(): Promise<string | null> {
     const sb = getSupabaseBrowserClient();
     if (!sb) return null;
-
     const { data, error } = await sb.auth.getSession();
     if (error) return null;
     return data.session?.access_token ?? null;
@@ -79,7 +64,7 @@ export default function InvestorsPage() {
 
     const token = await getAccessToken();
     if (!token) {
-      setLedgerErr("Not logged in. Please login again.");
+      setLedgerErr("Not logged in.");
       return;
     }
 
@@ -89,7 +74,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await safeJson(r);
+      const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "ledger failed");
       setLedger(j);
       if (j?.email) setEmail(j.email);
@@ -103,7 +88,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await safeJson(r);
+      const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "deposits failed");
       setDepRows(j?.rows ?? []);
     } catch (e: any) {
@@ -116,7 +101,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await safeJson(r);
+      const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "withdraws failed");
       setWdRows(j?.rows ?? []);
     } catch (e: any) {
@@ -125,21 +110,11 @@ export default function InvestorsPage() {
   }
 
   useEffect(() => {
-    if (didInit.current) return;
-    didInit.current = true;
-
     let mounted = true;
 
     (async () => {
       const sb = getSupabaseBrowserClient();
-      if (!sb) {
-        if (!mounted) return;
-        setEmail(null);
-        setLedgerErr(
-          "Supabase client 初始化失敗，請確認 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY"
-        );
-        return;
-      }
+      if (!sb) return;
 
       try {
         const { data, error } = await sb.auth.getUser();
@@ -186,8 +161,7 @@ export default function InvestorsPage() {
         },
         body: JSON.stringify({ amount_usd, note: depNote || null }),
       });
-
-      const j = await safeJson(r);
+      const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "deposit failed");
 
       setDepNote("");
@@ -219,8 +193,7 @@ export default function InvestorsPage() {
         },
         body: JSON.stringify({ amount_usd, note: wdNote || null }),
       });
-
-      const j = await safeJson(r);
+      const j = await r.json();
       if (!r.ok) throw new Error(j?.error || "withdraw failed");
 
       setWdNote("");
@@ -232,199 +205,248 @@ export default function InvestorsPage() {
     }
   }
 
+  const headerLeft = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: THEME.text }}>
+        Investor Portal
+      </div>
+      <div style={{ fontSize: 12, color: THEME.muted }}>
+        {email ? `Logged in as ${email}` : "Not logged in"}
+      </div>
+    </div>
+  );
+
   const headerRight = (
     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
       <Button onClick={loadAll}>重新載入</Button>
-      <Button onClick={logout} tone="bad">
+      <Button onClick={logout} variant="ghost" title="Logout">
         登出
       </Button>
     </div>
   );
 
   return (
-    <Shell
-      title="Investor Portal"
-      subtitle={email ? `Logged in as ${email}` : "Not logged in"}
-      right={headerRight}
-      theme={THEME}
+    <div
+      className="min-h-screen"
+      style={{ background: THEME.bg, color: THEME.text }}
     >
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
-        <div style={{ gridColumn: "span 12" }}>
-          <Card title="我的帳本（只吃 SETTLED）" accent={frozen ? "gold" : "none"}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }}>
-              <div style={{ gridColumn: "span 4" }}>
-                <Metric label="我的淨入金 (Principal)" value={`${fmt(ledger?.principal_usd)} USD`} />
+      <Shell headerLeft={headerLeft} headerRight={headerRight}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(12, 1fr)",
+            gap: 14,
+          }}
+        >
+          <div style={{ gridColumn: "span 12" }}>
+            <Card
+              title="我的帳本（只吃 SETTLED）"
+              accent={frozen ? "gold" : "none"}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(12, 1fr)",
+                  gap: 14,
+                }}
+              >
+                <div style={{ gridColumn: "span 4" }}>
+                  <Metric
+                    label="我的淨入金 (Principal)"
+                    value={`${fmt(ledger?.principal_usd)} USD`}
+                  />
+                </div>
+                <div style={{ gridColumn: "span 4" }}>
+                  <Metric
+                    label="我的待提款 (Pending)"
+                    value={`${fmt(ledger?.pending_withdraw_usd)} USD`}
+                  />
+                </div>
+                <div style={{ gridColumn: "span 4" }}>
+                  <Metric
+                    label={frozen ? "目前損益 (Frozen)" : "目前損益 (PnL)"}
+                    value={`${fmt(ledger?.investor_pnl_usd)} USD`}
+                    tone={frozen ? "neutral" : "good"}
+                  />
+                </div>
+
+                <div style={{ gridColumn: "span 12", opacity: 0.75, fontSize: 12 }}>
+                  規則：principal 只計入 status=SETTLED。你現在送出 PENDING 不會影響 principal（直到你 Admin 結算）。
+                </div>
+
+                {ledgerErr ? (
+                  <div
+                    style={{
+                      gridColumn: "span 12",
+                      color: "rgba(255,120,120,0.9)",
+                    }}
+                  >
+                    {ledgerErr}
+                  </div>
+                ) : null}
               </div>
-              <div style={{ gridColumn: "span 4" }}>
-                <Metric label="我的待提款 (Pending)" value={`${fmt(ledger?.pending_withdraw_usd)} USD`} />
-              </div>
-              <div style={{ gridColumn: "span 4" }}>
-                <Metric
-                  label={frozen ? "目前損益 (Frozen)" : "目前損益 (PnL)"}
-                  value={`${fmt(ledger?.investor_pnl_usd)} USD`}
-                  tone={frozen ? "muted" : "good"}
+            </Card>
+          </div>
+
+          <div style={{ gridColumn: "span 6" }}>
+            <Card title="入金申請（PENDING）" accent="none">
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                <input
+                  value={depAmt}
+                  onChange={(e) => setDepAmt(e.target.value)}
+                  placeholder="amount_usd"
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${THEME.border}`,
+                    background: "rgba(0,0,0,0.25)",
+                    color: THEME.text,
+                  }}
                 />
+                <Button onClick={submitDeposit} disabled={depBusy}>
+                  {depBusy ? "送出中…" : "提交入金"}
+                </Button>
               </div>
 
-              <div style={{ gridColumn: "span 12", opacity: 0.75, fontSize: 12 }}>
-                規則：principal 只計入 status=SETTLED。你現在送出 PENDING 不會影響 principal（直到你 Admin 結算）。
-              </div>
+              <input
+                value={depNote}
+                onChange={(e) => setDepNote(e.target.value)}
+                placeholder="備註（選填）"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: `1px solid ${THEME.border}`,
+                  background: "rgba(0,0,0,0.25)",
+                  color: THEME.text,
+                  marginBottom: 12,
+                }}
+              />
 
-              {ledgerErr ? (
-                <div style={{ gridColumn: "span 12", color: "rgba(255,120,120,0.9)" }}>{ledgerErr}</div>
+              {depErr ? (
+                <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>
+                  {depErr}
+                </div>
               ) : null}
-            </div>
-          </Card>
-        </div>
 
-        <div style={{ gridColumn: "span 6" }}>
-          <Card title="入金申請（PENDING）" accent="none">
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
-              <input
-                value={depAmt}
-                onChange={(e) => setDepAmt(e.target.value)}
-                placeholder="amount_usd"
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(0,0,0,0.25)",
-                  color: "rgba(255,255,255,0.9)",
-                }}
-              />
-              <Button onClick={submitDeposit} disabled={depBusy}>
-                {depBusy ? "送出中…" : "提交入金"}
-              </Button>
-            </div>
-
-            <input
-              value={depNote}
-              onChange={(e) => setDepNote(e.target.value)}
-              placeholder="備註（選填）"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.25)",
-                color: "rgba(255,255,255,0.9)",
-                marginBottom: 12,
-              }}
-            />
-
-            {depErr ? <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{depErr}</div> : null}
-
-            <div style={{ display: "grid", gap: 8 }}>
-              {depRows.length === 0 ? (
-                <div style={{ opacity: 0.7 }}>尚無入金申請</div>
-              ) : (
-                depRows.map((r) => (
-                  <div
-                    key={r.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 13, opacity: 0.95 }}>
-                        #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.65 }}>
-                        {new Date(r.created_at).toLocaleString()} {r.note ? `· ${r.note}` : ""}
+              <div style={{ display: "grid", gap: 8 }}>
+                {depRows.length === 0 ? (
+                  <div style={{ opacity: 0.7 }}>尚無入金申請</div>
+                ) : (
+                  depRows.map((r) => (
+                    <div
+                      key={r.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: `1px solid ${THEME.border}`,
+                        background: THEME.panel2,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, opacity: 0.95 }}>
+                          #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.65 }}>
+                          {new Date(r.created_at).toLocaleString()}{" "}
+                          {r.note ? `· ${r.note}` : ""}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
 
-        <div style={{ gridColumn: "span 6" }}>
-          <Card title="提款申請（PENDING）" accent="none">
-            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+          <div style={{ gridColumn: "span 6" }}>
+            <Card title="提款申請（PENDING）" accent="none">
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+                <input
+                  value={wdAmt}
+                  onChange={(e) => setWdAmt(e.target.value)}
+                  placeholder="amount_usd"
+                  style={{
+                    flex: 1,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${THEME.border}`,
+                    background: "rgba(0,0,0,0.25)",
+                    color: THEME.text,
+                  }}
+                />
+                <Button onClick={submitWithdraw} disabled={wdBusy} variant="ghost">
+                  {wdBusy ? "送出中…" : "提交提款"}
+                </Button>
+              </div>
+
               <input
-                value={wdAmt}
-                onChange={(e) => setWdAmt(e.target.value)}
-                placeholder="amount_usd"
+                value={wdNote}
+                onChange={(e) => setWdNote(e.target.value)}
+                placeholder="備註（選填）"
                 style={{
-                  flex: 1,
+                  width: "100%",
                   padding: "10px 12px",
                   borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  border: `1px solid ${THEME.border}`,
                   background: "rgba(0,0,0,0.25)",
-                  color: "rgba(255,255,255,0.9)",
+                  color: THEME.text,
+                  marginBottom: 12,
                 }}
               />
-              <Button onClick={submitWithdraw} disabled={wdBusy} tone="warn">
-                {wdBusy ? "送出中…" : "提交提款"}
-              </Button>
-            </div>
 
-            <input
-              value={wdNote}
-              onChange={(e) => setWdNote(e.target.value)}
-              placeholder="備註（選填）"
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.25)",
-                color: "rgba(255,255,255,0.9)",
-                marginBottom: 12,
-              }}
-            />
+              {wdErr ? (
+                <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>
+                  {wdErr}
+                </div>
+              ) : null}
 
-            {wdErr ? <div style={{ color: "rgba(255,120,120,0.9)", marginBottom: 10 }}>{wdErr}</div> : null}
-
-            <div style={{ display: "grid", gap: 8 }}>
-              {wdRows.length === 0 ? (
-                <div style={{ opacity: 0.7 }}>尚無提款申請</div>
-              ) : (
-                wdRows.map((r) => (
-                  <div
-                    key={r.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 13, opacity: 0.95 }}>
-                        #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.65 }}>
-                        {new Date(r.created_at).toLocaleString()} {r.note ? `· ${r.note}` : ""}
+              <div style={{ display: "grid", gap: 8 }}>
+                {wdRows.length === 0 ? (
+                  <div style={{ opacity: 0.7 }}>尚無提款申請</div>
+                ) : (
+                  wdRows.map((r) => (
+                    <div
+                      key={r.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: `1px solid ${THEME.border}`,
+                        background: THEME.panel2,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, opacity: 0.95 }}>
+                          #{r.id} · {fmt(r.amount_usd)} USD · {r.status}
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.65 }}>
+                          {new Date(r.created_at).toLocaleString()}{" "}
+                          {r.note ? `· ${r.note}` : ""}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
 
-        <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
-          提醒：這是 Sprint 1（只打通 PENDING 管線）。要讓 principal 變動，下一步 Sprint 2 會做 Admin 結算（PENDING → SETTLED）。
-        </div>
+          <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
+            提醒：這是 Sprint 1（只打通 PENDING 管線）。要讓 principal 變動，下一步 Sprint 2 會做 Admin 結算（PENDING → SETTLED）。
+          </div>
 
-        <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
-          <Link href="/">回首頁</Link>
+          <div style={{ gridColumn: "span 12", opacity: 0.7, fontSize: 12 }}>
+            <Link href="/">回首頁</Link>
+          </div>
         </div>
-      </div>
-    </Shell>
+      </Shell>
+    </div>
   );
 }

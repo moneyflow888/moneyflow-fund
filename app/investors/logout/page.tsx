@@ -11,7 +11,7 @@ export default function InvestorLogoutPage() {
   const [msg, setMsg] = useState("登出中…");
   const [err, setErr] = useState<string | null>(null);
 
-  // 避免 React StrictMode 在 dev 下執行兩次
+  // 避免 StrictMode 造成 useEffect 兩次
   const didRun = useRef(false);
 
   useEffect(() => {
@@ -20,35 +20,30 @@ export default function InvestorLogoutPage() {
 
     let mounted = true;
 
-    const run = async () => {
+    (async () => {
       try {
         const sb = getSupabaseBrowserClient();
-
-        // ✅ 關鍵修正：處理 null
         if (!sb) {
+          // ⭐ 關鍵：sb 可能是 null（env 沒注入或不在 browser）
           throw new Error(
-            "Supabase client 初始化失敗，請確認 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY 已正確設定"
+            "Supabase client 初始化失敗：請檢查 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY"
           );
         }
 
         await sb.auth.signOut();
 
         if (!mounted) return;
-
         setMsg("已登出，正在返回登入頁…");
 
-        // 小延遲讓畫面顯示訊息
         setTimeout(() => {
           window.location.href = "/investors/login";
-        }, 800);
+        }, 500);
       } catch (e: any) {
         if (!mounted) return;
         setErr(e?.message || String(e));
         setMsg("登出失敗");
       }
-    };
-
-    run();
+    })();
 
     return () => {
       mounted = false;
@@ -56,32 +51,19 @@ export default function InvestorLogoutPage() {
   }, []);
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: THEME.bg, color: THEME.text }}
-    >
+    <div className="min-h-screen" style={{ background: THEME.bg, color: THEME.text }}>
       <Shell>
         <div className="max-w-lg mx-auto mt-10">
-          <Card
-            accent="gold"
-            title="Investor Logout"
-            subtitle="Supabase Auth"
-          >
-            <div
-              className="mt-3 text-sm"
-              style={{ color: THEME.muted }}
-            >
+          <Card accent="gold" title="Investor Logout" subtitle="Supabase Auth">
+            <div className="mt-3 text-sm" style={{ color: THEME.muted }}>
               {msg}
             </div>
 
-            {err && (
-              <div
-                className="mt-3 text-sm whitespace-pre-line"
-                style={{ color: THEME.bad }}
-              >
+            {err ? (
+              <div className="mt-3 text-sm whitespace-pre-line" style={{ color: THEME.bad }}>
                 {err}
               </div>
-            )}
+            ) : null}
 
             <div className="mt-5 flex gap-2">
               <Link href="/investors/login">

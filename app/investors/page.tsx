@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { Shell, Card, Metric, THEME, Button } from "@/components/mf/MfUi";
@@ -29,6 +29,17 @@ function fmt(n: unknown): string {
   return x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+async function safeJson(r: Response): Promise<any> {
+  // 避免 204 / 非 JSON 直接 throw
+  const text = await r.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
 export default function InvestorsPage() {
   const [email, setEmail] = useState<string | null>(null);
 
@@ -49,9 +60,13 @@ export default function InvestorsPage() {
 
   const frozen = !!ledger?.frozen;
 
+  // 避免 StrictMode 觸發兩次造成重複 load
+  const didInit = useRef(false);
+
   async function getAccessToken(): Promise<string | null> {
     const sb = getSupabaseBrowserClient();
     if (!sb) return null;
+
     const { data, error } = await sb.auth.getSession();
     if (error) return null;
     return data.session?.access_token ?? null;
@@ -64,7 +79,7 @@ export default function InvestorsPage() {
 
     const token = await getAccessToken();
     if (!token) {
-      setLedgerErr("Not logged in.");
+      setLedgerErr("Not logged in. Please login again.");
       return;
     }
 
@@ -74,7 +89,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await r.json();
+      const j = await safeJson(r);
       if (!r.ok) throw new Error(j?.error || "ledger failed");
       setLedger(j);
       if (j?.email) setEmail(j.email);
@@ -88,7 +103,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await r.json();
+      const j = await safeJson(r);
       if (!r.ok) throw new Error(j?.error || "deposits failed");
       setDepRows(j?.rows ?? []);
     } catch (e: any) {
@@ -101,7 +116,7 @@ export default function InvestorsPage() {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const j = await r.json();
+      const j = await safeJson(r);
       if (!r.ok) throw new Error(j?.error || "withdraws failed");
       setWdRows(j?.rows ?? []);
     } catch (e: any) {
@@ -110,11 +125,21 @@ export default function InvestorsPage() {
   }
 
   useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+
     let mounted = true;
 
     (async () => {
       const sb = getSupabaseBrowserClient();
-      if (!sb) return;
+      if (!sb) {
+        if (!mounted) return;
+        setEmail(null);
+        setLedgerErr(
+          "Supabase client 初始化失敗，請確認 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY"
+        );
+        return;
+      }
 
       try {
         const { data, error } = await sb.auth.getUser();
@@ -161,7 +186,8 @@ export default function InvestorsPage() {
         },
         body: JSON.stringify({ amount_usd, note: depNote || null }),
       });
-      const j = await r.json();
+
+      const j = await safeJson(r);
       if (!r.ok) throw new Error(j?.error || "deposit failed");
 
       setDepNote("");
@@ -193,7 +219,8 @@ export default function InvestorsPage() {
         },
         body: JSON.stringify({ amount_usd, note: wdNote || null }),
       });
-      const j = await r.json();
+
+      const j = await safeJson(r);
       if (!r.ok) throw new Error(j?.error || "withdraw failed");
 
       setWdNote("");

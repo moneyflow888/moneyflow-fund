@@ -23,6 +23,14 @@ export default function InvestorLogoutPage() {
     const run = async () => {
       try {
         const sb = getSupabaseBrowserClient();
+
+        // ✅ 關鍵修正：處理 null
+        if (!sb) {
+          throw new Error(
+            "Supabase client 初始化失敗，請確認 NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY 已正確設定"
+          );
+        }
+
         await sb.auth.signOut();
 
         if (!mounted) return;
